@@ -31,6 +31,8 @@ export interface PomoSettings {
 	customBreak: number;
 	logToNote: boolean;
 	logNote: string;
+	dailyGoal: number;
+	weeklyGoal: number;
 }
 
 export const DEFAULT_SETTINGS: PomoSettings = {
@@ -60,6 +62,8 @@ export const DEFAULT_SETTINGS: PomoSettings = {
 	customBreak: 5,
 	logToNote: false,
 	logNote: "Pomodoro Custom Log.md",
+	dailyGoal: 10,
+	weeklyGoal: 40,
 }
 
 
@@ -336,6 +340,28 @@ export class PomoSettingTab extends PluginSettingTab {
 						}));
 			}
 		}
+
+		containerEl.createEl('h2', { text: 'Goals' });
+
+		new Setting(containerEl)
+			.setName("Daily Goal")
+			.setDesc("Number of pomodoros to complete each day")
+			.addText(text => text
+				.setValue(this.plugin.settings.dailyGoal.toString())
+				.onChange(value => {
+					this.plugin.settings.dailyGoal = setNumericValue(value, DEFAULT_SETTINGS.dailyGoal, this.plugin.settings.dailyGoal);
+					this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName("Weekly Goal")
+			.setDesc("Number of pomodoros to complete each week")
+			.addText(text => text
+				.setValue(this.plugin.settings.weeklyGoal.toString())
+				.onChange(value => {
+					this.plugin.settings.weeklyGoal = setNumericValue(value, DEFAULT_SETTINGS.weeklyGoal, this.plugin.settings.weeklyGoal);
+					this.plugin.saveSettings();
+				}));
 	}
 }
 

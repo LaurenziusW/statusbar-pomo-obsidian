@@ -40,7 +40,6 @@ export class Timer {
 	customPomo: number;
 	customBreak: number;
 	isCustom: boolean;
-	lastLog: string;
 
 	constructor(plugin: PomoTimerPlugin) {
 		this.plugin = plugin;
@@ -60,7 +59,6 @@ export class Timer {
 			this.customPomo = this.plugin.settings.customPomo;
 			this.customBreak = this.plugin.settings.customBreak;
 			this.isCustom = false;
-			this.lastLog = "";
 		}
 
 	onRibbonIconClick() {
@@ -102,7 +100,11 @@ export class Timer {
 
 			return timer_type_symbol + millisecsToString(this.getCountdown()); //return display value
 		} else {
-			return ""; //fixes TypeError: failed to execute 'appendChild' on 'Node https://github.com/kzhovn/statusbar-pomo-obsidian/issues/4
+			const today = moment().startOf('day');
+			const filePath = await this.getOrCreateLogFilePath();
+			const content = await this.plugin.app.vault.adapter.read(filePath);
+			const dailyPomos = content.split('\n').filter(line => line.startsWith('[🍅]') && moment(line.split(' ')[1], 'YYYY-MM-DD').isSame(today, 'd')).length;
+			return `🍅 ${dailyPomos}/${this.plugin.settings.dailyGoal}`;
 		}
 	}
 
@@ -157,7 +159,7 @@ async handleTimerEnd() {
             if (this.mode === Mode.Pomo) {
                 this.pomosSinceStart += 1;
                 if (this.plugin.settings.logging === true) {
-                    await this.logPomo();
+                    await this.logPomo(this.getElapsedActiveMs());
                 }
                 const nextMode = (this.pomosSinceStart % this.plugin.settings.longBreakInterval === 0) ? Mode.LongBreak : Mode.ShortBreak;
                 this.inOvertime = false;
@@ -166,7 +168,7 @@ async handleTimerEnd() {
             } else {
                 this.cyclesSinceLastAutoStop += 1;
                 if (this.plugin.settings.logging === true) {
-                    await this.logBreak();
+                    await this.logBreak(this.getElapsedActiveMs());
                 }
                 this.inOvertime = false;
                 this.startTimerNoConfirm(Mode.Pomo);
@@ -216,10 +218,11 @@ async handleTimerEnd() {
         // Log the running session on quit with actual duration
         if (this.plugin.settings.logging === true) {
             try {
+				const elapsedMs = this.getElapsedActiveMs();
                 if (this.mode === Mode.Pomo) {
-                    await this.logPomo();
+                    await this.logPomo(elapsedMs);
                 } else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
-                    await this.logBreak();
+                    await this.logBreak(elapsedMs);
                 }
             } catch (e) {
                 console.log(e);
@@ -308,9 +311,9 @@ async handleTimerEnd() {
 		this.setLogFile();
 		if (this.plugin.settings.logging === true) {
 			if (this.mode === Mode.Pomo) {
-				this.logPomoStart();
+				this.pomoSessionStartTime = moment();
 			} else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
-				this.logBreakStart();
+				this.breakSessionStartTime = moment();
 			}
 		}
 
@@ -328,10 +331,11 @@ async handleTimerEnd() {
 
 		try {
 			if (this.plugin.settings.logging === true) {
+				const elapsedMs = this.getElapsedActiveMs();
 				if (this.mode === Mode.Pomo) {
-					await this.logPomo();
+					await this.logPomo(elapsedMs);
 				} else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
-					await this.logBreak();
+					await this.logBreak(elapsedMs);
 				}
 			}
 		} catch (e) {
@@ -372,10 +376,11 @@ async handleTimerEnd() {
 
         // Close out any existing session (normal, paused, or overtime) before starting the new one
         if (this.plugin.settings.logging === true && this.mode !== Mode.NoTimer && nextMode !== this.mode) {
+			const elapsedMs = this.getElapsedActiveMs();
             if (this.mode === Mode.Pomo) {
-                await this.logPomo();
+                await this.logPomo(elapsedMs);
             } else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
-                await this.logBreak();
+                await this.logBreak(elapsedMs);
             }
         }
         this.inOvertime = false;
@@ -387,15 +392,6 @@ async handleTimerEnd() {
 
 		// Capture the active note at start so it can be logged later
 		this.setLogFile();
-
-		// Log immediately when a session starts
-		if (this.plugin.settings.logging === true) {
-			if (this.mode === Mode.Pomo) {
-				this.logPomoStart();
-			} else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
-				this.logBreakStart();
-			}
-		}
 
 		this.modeStartingNotification();
 
@@ -440,15 +436,6 @@ async handleTimerEnd() {
 			}
 		} else { //starting a specific mode passed to func
 			this.mode = mode;
-		}
-
-		// When entering a new session, record the session start time
-		if (this.mode === Mode.Pomo) {
-			this.pomoSessionStartTime = moment();
-			this.breakSessionStartTime = null;
-		} else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
-			this.breakSessionStartTime = moment();
-			this.pomoSessionStartTime = null;
 		}
 		this.inOvertime = false;
 		this.setStartAndEndTime(this.getTotalModeMillisecs());
@@ -577,40 +564,68 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 		return logText;
 	}
 
-	private async writeLogEntry(logText: string): Promise<void> {
+	private async writeLogEntry(logText: string, duration?: number, mode?: Mode): Promise<void> {
 		const filePath = await this.getOrCreateLogFilePath();
 		let content = await this.plugin.app.vault.adapter.read(filePath);
 		content = logText + '\n' + content;
+		content = await this.updateLogSummary(content, duration, mode);
 		await this.plugin.app.vault.adapter.write(filePath, content);
 	}
 
-	async logPomo(): Promise<void> {
-		const logText = `[🍅] ${this.lastLog} - ${moment().format('HH:mm')} (${this.customPomo} minutes)`;
-		const filePath = await this.getOrCreateLogFilePath();
-		let content = await this.plugin.app.vault.adapter.read(filePath);
-		content = content.replace(this.lastLog, logText);
-		await this.plugin.app.vault.adapter.write(filePath, content);
+	private async updateLogSummary(content: string, duration: number, mode: Mode): Promise<string> {
+		const summaryRegex = /---\n\*\*Total Session Time:\*\* (.*)\n\*\*Total Break Time:\*\* (.*)\n\*\*Total Time:\*\* (.*)\n---\n/;
+		const match = content.match(summaryRegex);
+
+		let sessionTime = 0;
+		let breakTime = 0;
+
+		if (match) {
+			sessionTime = moment.duration(match[1]).asMilliseconds();
+			breakTime = moment.duration(match[2]).asMilliseconds();
+			content = content.replace(summaryRegex, '');
+		}
+
+		if (mode === Mode.Pomo) {
+			sessionTime += duration;
+		} else if (mode === Mode.ShortBreak || mode === Mode.LongBreak) {
+			breakTime += duration;
+		}
+
+		const totalTime = sessionTime + breakTime;
+
+		const today = moment().startOf('day');
+		const week = moment().startOf('week');
+
+		const dailyPomos = content.split('\n').filter(line => line.startsWith('[🍅]') && moment(line.split(' ')[1], 'YYYY-MM-DD').isSame(today, 'd')).length;
+		const weeklyPomos = content.split('\n').filter(line => line.startsWith('[🍅]') && moment(line.split(' ')[1], 'YYYY-MM-DD').isSame(week, 'w')).length;
+
+		const summary = `---
+**Total Session Time:** ${moment.utc(sessionTime).format('HH:mm:ss')}
+**Total Break Time:** ${moment.utc(breakTime).format('HH:mm:ss')}
+**Total Time:** ${moment.utc(totalTime).format('HH:mm:ss')}
+---
+**Goals**
+**Daily:** ${dailyPomos}/${this.plugin.settings.dailyGoal}
+**Weekly:** ${weeklyPomos}/${this.plugin.settings.weeklyGoal}
+---
+`;
+
+		return summary + content;
+	}
+
+	async logPomo(durationMs?: number): Promise<void> {
+		const duration = durationMs ?? this.getTotalModeMillisecs();
+		const startTime = this.pomoSessionStartTime ?? moment();
+		const logText = `[🍅] ${startTime.format('YYYY-MM-DD HH:mm')} - ${moment().format('HH:mm')} (${millisecsToString(duration)} minutes)`;
+		await this.writeLogEntry(logText, duration, Mode.Pomo);
 		this.pomoSessionStartTime = null;
 	}
 
-	async logPomoStart(): Promise<void> {
-		const logText = `[🍅] ${moment().format('YYYY-MM-DD HH:mm')}`;
-		this.lastLog = logText;
-		await this.writeLogEntry(logText);
-	}
-
-	async logBreakStart(): Promise<void> {
-		const logText = `[🏖] ${moment().format('YYYY-MM-DD HH:mm')}`;
-		this.lastLog = logText;
-		await this.writeLogEntry(logText);
-	}
-
-	async logBreak(): Promise<void> {
-		const logText = `[🏖] ${this.lastLog} - ${moment().format('HH:mm')} (${this.customBreak} minutes)`;
-		const filePath = await this.getOrCreateLogFilePath();
-		let content = await this.plugin.app.vault.adapter.read(filePath);
-		content = content.replace(this.lastLog, logText);
-		await this.plugin.app.vault.adapter.write(filePath, content);
+	async logBreak(durationMs?: number): Promise<void> {
+		const duration = durationMs ?? this.getTotalModeMillisecs();
+		const startTime = this.breakSessionStartTime ?? moment();
+		const logText = `[🏖] ${startTime.format('YYYY-MM-DD HH:mm')} - ${moment().format('HH:mm')} (${millisecsToString(duration)} minutes)`;
+		await this.writeLogEntry(logText, duration, this.mode);
 		this.breakSessionStartTime = null;
 	}
 
