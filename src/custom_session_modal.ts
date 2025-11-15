@@ -50,13 +50,26 @@ export class CustomSessionModal extends Modal {
                 }));
 
         if (this.logToNote) {
-            new Setting(contentEl)
+            const textSetting = new Setting(contentEl)
                 .setName('Log note')
-                .addText(text => text
-                    .setValue(this.logNote)
-                    .onChange(value => {
-                        this.logNote = value;
-                    }));
+                .addText(text => {
+                    text
+                        .setValue(this.logNote)
+                        .onChange(value => {
+                            this.logNote = value;
+                        });
+
+                    const files = this.app.vault.getMarkdownFiles().map(file => file.path);
+                    const datalist = document.createElement('datalist');
+                    datalist.id = 'log-file-suggestions';
+                    for (const file of files) {
+                        const option = document.createElement('option');
+                        option.value = file;
+                        datalist.appendChild(option);
+                    }
+                    text.inputEl.setAttribute('list', 'log-file-suggestions');
+                    text.inputEl.appendChild(datalist);
+                });
         }
 
         new Setting(contentEl)

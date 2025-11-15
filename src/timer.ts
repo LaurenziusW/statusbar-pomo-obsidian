@@ -220,10 +220,10 @@ async handleTimerEnd() {
         if (this.plugin.settings.logging === true) {
             try {
                 if (this.mode === Mode.Pomo) {
-                    await this.logPomo();
+                    // await this.logPomo();
                     await this.updateDailySummary();
                 } else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
-                    await this.logBreak();
+                    // await this.logBreak();
                     await this.updateDailySummary();
                 }
             } catch (e) {
@@ -593,15 +593,7 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 	}
 
 	async logPomo(): Promise<void> {
-		let durationMs = this.getElapsedActiveMs();
-		let prefix = this.isCustom ? "[🍅 Custom]" : "[🍅]";
-		if (moment().isBefore(this.endTime)) {
-			prefix = this.isCustom ? "[🍅 Custom Quit Early]" : "[🍅 Quit Early]";
-		} else if (moment().isAfter(this.endTime)) {
-			prefix = this.isCustom ? "[🍅 Custom Overtime]" : "[🍅 Overtime]";
-		}
-		const startRef = this.pomoSessionStartTime || this.startTime;
-		const logText = this.buildLogText(prefix, durationMs, startRef);
+		const logText = `[🍅] ${moment().format('YYYY-MM-DD HH:mm')} - ${this.customPomo} minutes`;
 		await this.writeLogEntry(logText);
 		this.pomoSessionStartTime = null;
 	}
@@ -611,29 +603,13 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 		await this.writeLogEntry(logText);
 	}
 
-	async logPomoQuitEarly(): Promise<void> {
-		let baseStart = this.pomoSessionStartTime || this.startTime;
-		let durationMs = baseStart ? moment().diff(baseStart) : undefined;
-		const logText = this.buildLogText("[🍅 Quit Early]", durationMs, baseStart);
-		await this.writeLogEntry(logText);
-		this.pomoSessionStartTime = null;
-	}
-
 	async logBreakStart(): Promise<void> {
 		const logText = this.buildLogText("[🏖 Start]");
 		await this.writeLogEntry(logText);
 	}
 
 	async logBreak(): Promise<void> {
-		let durationMs = this.getElapsedActiveMs();
-		let prefix = this.isCustom ? "[🏖 Custom]" : "[🏖]";
-		if (moment().isBefore(this.endTime)) {
-			prefix = this.isCustom ? "[🏖 Custom Quit Early]" : "[🏖 Quit Early]";
-		} else if (moment().isAfter(this.endTime)) {
-			prefix = this.isCustom ? "[🏖 Custom Overtime]" : "[🏖 Overtime]";
-		}
-		const startRef = this.breakSessionStartTime || this.startTime;
-		const logText = this.buildLogText(prefix, durationMs, startRef);
+		const logText = `[🏖] ${moment().format('YYYY-MM-DD HH:mm')} - ${this.customBreak} minutes`;
 		await this.writeLogEntry(logText);
 		this.breakSessionStartTime = null;
 	}
