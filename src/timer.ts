@@ -40,6 +40,7 @@ export class Timer {
 	customPomo: number;
 	customBreak: number;
 	isCustom: boolean;
+	lastLog: string;
 
 	constructor(plugin: PomoTimerPlugin) {
 		this.plugin = plugin;
@@ -59,6 +60,7 @@ export class Timer {
 			this.customPomo = this.plugin.settings.customPomo;
 			this.customBreak = this.plugin.settings.customBreak;
 			this.isCustom = false;
+			this.lastLog = "";
 		}
 
 	onRibbonIconClick() {
@@ -134,7 +136,6 @@ async handleTimerEnd() {
                     } else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
                         await this.logBreak();
                     }
-                    await this.updateDailySummary();
                 }
                 // Stop any white noise
                 if (this.plugin.settings.whiteNoise === true && this.whiteNoisePlayer) {
@@ -157,7 +158,6 @@ async handleTimerEnd() {
                 this.pomosSinceStart += 1;
                 if (this.plugin.settings.logging === true) {
                     await this.logPomo();
-                    await this.updateDailySummary();
                 }
                 const nextMode = (this.pomosSinceStart % this.plugin.settings.longBreakInterval === 0) ? Mode.LongBreak : Mode.ShortBreak;
                 this.inOvertime = false;
@@ -167,7 +167,6 @@ async handleTimerEnd() {
                 this.cyclesSinceLastAutoStop += 1;
                 if (this.plugin.settings.logging === true) {
                     await this.logBreak();
-                    await this.updateDailySummary();
                 }
                 this.inOvertime = false;
                 this.startTimerNoConfirm(Mode.Pomo);
@@ -194,13 +193,11 @@ async handleTimerEnd() {
             this.pomosSinceStart += 1;
             if (this.plugin.settings.logging === true) {
                 await this.logPomo();
-                await this.updateDailySummary();
             }
         } else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
             this.cyclesSinceLastAutoStop += 1;
             if (this.plugin.settings.logging === true) {
                 await this.logBreak();
-                await this.updateDailySummary();
             }
         }
 
@@ -220,11 +217,9 @@ async handleTimerEnd() {
         if (this.plugin.settings.logging === true) {
             try {
                 if (this.mode === Mode.Pomo) {
-                    // await this.logPomo();
-                    await this.updateDailySummary();
+                    await this.logPomo();
                 } else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
-                    // await this.logBreak();
-                    await this.updateDailySummary();
+                    await this.logBreak();
                 }
             } catch (e) {
                 console.log(e);
@@ -269,7 +264,6 @@ async handleTimerEnd() {
 
 		// Update summary on any state change
 		if (this.plugin.settings.logging === true) {
-			await this.updateDailySummary();
 		}
 	}
 
@@ -318,7 +312,6 @@ async handleTimerEnd() {
 			} else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
 				this.logBreakStart();
 			}
-			this.updateDailySummary();
 		}
 
 		this.modeStartingNotification();
@@ -340,7 +333,6 @@ async handleTimerEnd() {
 				} else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
 					await this.logBreak();
 				}
-				await this.updateDailySummary();
 			}
 		} catch (e) {
 			console.log(e);
@@ -385,7 +377,6 @@ async handleTimerEnd() {
             } else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
                 await this.logBreak();
             }
-            await this.updateDailySummary();
         }
         this.inOvertime = false;
 
@@ -404,7 +395,6 @@ async handleTimerEnd() {
 			} else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
 				this.logBreakStart();
 			}
-			this.updateDailySummary();
 		}
 
 		this.modeStartingNotification();
@@ -589,28 +579,38 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 
 	private async writeLogEntry(logText: string): Promise<void> {
 		const filePath = await this.getOrCreateLogFilePath();
-		await this.insertUnderDailyHeading(filePath, logText);
+		let content = await this.plugin.app.vault.adapter.read(filePath);
+		content = logText + '\n' + content;
+		await this.plugin.app.vault.adapter.write(filePath, content);
 	}
 
 	async logPomo(): Promise<void> {
-		const logText = `[🍅] ${moment().format('YYYY-MM-DD HH:mm')} - ${this.customPomo} minutes`;
-		await this.writeLogEntry(logText);
+		const logText = `[🍅] ${this.lastLog} - ${moment().format('HH:mm')} (${this.customPomo} minutes)`;
+		const filePath = await this.getOrCreateLogFilePath();
+		let content = await this.plugin.app.vault.adapter.read(filePath);
+		content = content.replace(this.lastLog, logText);
+		await this.plugin.app.vault.adapter.write(filePath, content);
 		this.pomoSessionStartTime = null;
 	}
 
 	async logPomoStart(): Promise<void> {
-		const logText = this.buildLogText("[🍅 Start]");
+		const logText = `[🍅] ${moment().format('YYYY-MM-DD HH:mm')}`;
+		this.lastLog = logText;
 		await this.writeLogEntry(logText);
 	}
 
 	async logBreakStart(): Promise<void> {
-		const logText = this.buildLogText("[🏖 Start]");
+		const logText = `[🏖] ${moment().format('YYYY-MM-DD HH:mm')}`;
+		this.lastLog = logText;
 		await this.writeLogEntry(logText);
 	}
 
 	async logBreak(): Promise<void> {
-		const logText = `[🏖] ${moment().format('YYYY-MM-DD HH:mm')} - ${this.customBreak} minutes`;
-		await this.writeLogEntry(logText);
+		const logText = `[🏖] ${this.lastLog} - ${moment().format('HH:mm')} (${this.customBreak} minutes)`;
+		const filePath = await this.getOrCreateLogFilePath();
+		let content = await this.plugin.app.vault.adapter.read(filePath);
+		content = content.replace(this.lastLog, logText);
+		await this.plugin.app.vault.adapter.write(filePath, content);
 		this.breakSessionStartTime = null;
 	}
 
@@ -641,7 +641,6 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 		return 0;
 	}
 
-	//from Note Refactor plugin by James Lynch, https://github.com/lynchjames/note-refactor-obsidian/blob/80c1a23a1352b5d22c70f1b1d915b4e0a1b2b33f/src/obsidian-file.ts#L69
 	async appendFile(filePath: string, logText: string): Promise<void> {
 		let existingContent = await this.plugin.app.vault.adapter.read(filePath);
 		if (existingContent.length > 0) {
@@ -672,134 +671,11 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 		return this.plugin.settings.logFile;
 	}
 
-	private getTodayHeadingPrefix(): string {
-		// One heading per day, include weekday name, totals appended later
-		const todayStr = moment().format('YYYY-MM-DD (dddd)');
-		return `## Pomodoro ${todayStr}`;
-	}
-
-	private buildHeadingWithTotals(pomoMs: number, breakMs: number): string {
-		const totalMs = pomoMs + breakMs;
-		return `${this.getTodayHeadingPrefix()} — 🍅 ${this.formatTotal(pomoMs)}, 🏖 ${this.formatTotal(breakMs)}, Σ ${this.formatTotal(totalMs)}`;
-	}
-
-	private findSectionBounds(lines: string[], headingPrefix: string): { start: number, end: number } | null {
-		let start = -1;
-		for (let i = 0; i < lines.length; i++) {
-			if (lines[i].startsWith(headingPrefix)) {
-				start = i;
-				break;
-			}
-		}
-		if (start === -1) return null;
-		let end = lines.length;
-		for (let i = start + 1; i < lines.length; i++) {
-			if (lines[i].startsWith('## ') || lines[i].startsWith('# ')) {
-				end = i;
-				break;
-			}
-		}
-		return { start, end };
-	}
-
-	private async insertUnderDailyHeading(filePath: string, logText: string): Promise<void> {
-		let content = await this.plugin.app.vault.adapter.read(filePath);
-		const headingPrefix = this.getTodayHeadingPrefix();
-		let lines = content.split(/\r?\n/);
-
-		let section = this.findSectionBounds(lines, headingPrefix);
-		if (!section) {
-			// Create new heading at end
-			const pomoMs = 0;
-			const breakMs = 0;
-			const headingLine = this.buildHeadingWithTotals(pomoMs, breakMs);
-			if (content.length > 0 && !content.endsWith('\n')) content += '\n';
-			content += headingLine + '\n';
-			content += logText + '\n';
-			await this.plugin.app.vault.adapter.write(filePath, content);
-			return;
-		}
-
-		// Insert logText at the end of the section
-		const insertIndex = section.end; // before next heading or at EOF
-		const needsNewlineBefore = insertIndex > 0 && lines[insertIndex - 1].length > 0;
-		if (needsNewlineBefore) {
-			lines.splice(insertIndex, 0, '');
-			section.end++;
-		}
-		lines.splice(section.end, 0, logText);
-
-		await this.plugin.app.vault.adapter.write(filePath, lines.join('\n'));
-	}
-
 	setLogFile(){
 		const activeView = this.plugin.app.workspace.getActiveFile();
 		if (activeView) {
 			this.activeNote = activeView;
 		}
-	}
-
-	/**************  Daily Summary (daily notes) **************/
-	private parseDurationToMillis(duration: string): number {
-		// duration formats: HH:mm:ss or mm:ss
-		const parts = duration.split(":").map(p => Number(p));
-		if (parts.length === 3) {
-			return ((parts[0] * 60 * 60) + (parts[1] * 60) + parts[2]) * 1000;
-		} else if (parts.length === 2) {
-			return ((parts[0] * 60) + parts[1]) * 1000;
-		}
-		return 0;
-	}
-
-    private sumDurations(content: string, type: 'pomo' | 'break'): number {
-		const lines = content.split(/\r?\n/);
-		let sum = 0;
-		for (const line of lines) {
-			const trimmed = line.trim();
-			let isMatch = false;
-            if (type === 'pomo') {
-                // Include all finished pomo logs (normal, quit early, overtime), exclude starts
-                isMatch = trimmed.startsWith('[🍅') && !trimmed.includes('Start');
-            } else {
-                // Include all finished break logs, exclude starts
-                isMatch = trimmed.startsWith('[🏖') && !trimmed.includes('Start');
-            }
-			if (!isMatch) continue;
-
-			const m = trimmed.match(/—\s+([0-9]{1,2}:\d{2}(?::\d{2})?)/);
-			if (m && m[1]) {
-				sum += this.parseDurationToMillis(m[1]);
-			}
-		}
-		return sum;
-	}
-
-	private formatTotal(ms: number): string {
-		return millisecsToString(ms);
-	}
-
-	private async updateDailySummary(): Promise<void> {
-		if (this.plugin.settings.logging !== true) return;
-
-		const filePath = await this.getOrCreateLogFilePath();
-		let content = await this.plugin.app.vault.adapter.read(filePath);
-		let lines = content.split(/\r?\n/);
-
-		const headingPrefix = this.getTodayHeadingPrefix();
-		let section = this.findSectionBounds(lines, headingPrefix);
-		if (!section) {
-			// Nothing to update if today's heading doesn't exist yet
-			return;
-		}
-
-		// Compute totals within the section (excluding the heading line)
-		const sectionLines = lines.slice(section.start + 1, section.end);
-		const sectionContent = sectionLines.join('\n');
-		const pomoMs = this.sumDurations(sectionContent, 'pomo');
-		const breakMs = this.sumDurations(sectionContent, 'break');
-
-		lines[section.start] = this.buildHeadingWithTotals(pomoMs, breakMs);
-		await this.plugin.app.vault.adapter.write(filePath, lines.join('\n'));
 	}
 }
 
