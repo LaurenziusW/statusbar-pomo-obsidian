@@ -2,6 +2,7 @@ import { Notice, moment, TFolder, TFile, Modal, ButtonComponent } from 'obsidian
 import { notificationUrl, whiteNoiseUrl } from './audio_urls';
 import { WhiteNoise } from './white_noise';
 import PomoTimerPlugin from './main';
+import { CustomSessionModal } from './custom_session_modal';
 
 const electron = require("electron");
 
@@ -11,7 +12,8 @@ export const enum Mode {
 	Pomo,
 	ShortBreak,
 	LongBreak,
-	NoTimer
+	NoTimer,
+	Custom
 }
 
 
@@ -35,6 +37,9 @@ export class Timer {
 	inOvertime: boolean;
 	/** Guard to avoid multiple prompts and repeated end handling */
 	awaitingEndDecision: boolean;
+	customPomo: number;
+	customBreak: number;
+	isCustom: boolean;
 
 	constructor(plugin: PomoTimerPlugin) {
 		this.plugin = plugin;
@@ -51,6 +56,9 @@ export class Timer {
 			this.breakSessionStartTime = null;
 			this.inOvertime = false;
 			this.awaitingEndDecision = false;
+			this.customPomo = this.plugin.settings.customPomo;
+			this.customBreak = this.plugin.settings.customBreak;
+			this.isCustom = false;
 		}
 
 	onRibbonIconClick() {
@@ -70,6 +78,9 @@ export class Timer {
 				timer_type_symbol = "🏖️ ";
 				if (this.mode === Mode.Pomo) {
 					timer_type_symbol = "🍅 ";
+				}
+				if (this.mode === Mode.Custom) {
+					timer_type_symbol = "CUSTOM ";
 				}
 			}
 
@@ -164,6 +175,15 @@ async handleTimerEnd() {
             }
         }
 
+		if (this.mode === Mode.Custom) {
+			this.plugin.settings.customTimer = true;
+			this.plugin.settings.customPomo = this.customPomo;
+			this.plugin.settings.customBreak = this.customBreak;
+			this.plugin.saveSettings();
+			this.startTimer(Mode.Custom);
+			return;
+		}
+
         // Fallback to prior behavior when prompt is disabled
         if (this.plugin.settings.manualAdvance) {
             this.inOvertime = true;
@@ -217,6 +237,7 @@ async handleTimerEnd() {
 		this.paused = false;
         this.pomosSinceStart = 0;
         this.inOvertime = false;
+		this.isCustom = false;
 
 		if (this.plugin.settings.whiteNoise === true) {
 			this.whiteNoisePlayer.stopWhiteNoise();
@@ -270,6 +291,19 @@ async handleTimerEnd() {
 	}
 
 	startTimer(mode: Mode = null): void {
+		if (mode === Mode.Custom) {
+			new CustomSessionModal(this.plugin.app, this.plugin, (pomo: number, shortBreak: number, logToNote: boolean, logNote: string) => {
+				this.customPomo = pomo;
+				this.customBreak = shortBreak;
+				this.plugin.settings.logToNote = logToNote;
+				this.plugin.settings.logNote = logNote;
+				this.plugin.saveSettings();
+				this.isCustom = true;
+				this.startTimerWithConfirm(Mode.Pomo);
+			}).open();
+			return;
+		}
+		this.isCustom = false;
 		this.startTimerWithConfirm(mode);
 	}
 
@@ -442,6 +476,17 @@ async handleTimerEnd() {
 	}
 
 	getTotalModeMillisecs(): number {
+		if (this.isCustom) {
+			switch (this.mode) {
+				case Mode.Pomo: {
+					return this.customPomo * MILLISECS_IN_MINUTE;
+				}
+				case Mode.ShortBreak:
+				case Mode.LongBreak: {
+					return this.customBreak * MILLISECS_IN_MINUTE;
+				}
+			}
+		}
 
 		switch (this.mode) {
 			case Mode.Pomo: {
@@ -477,12 +522,20 @@ async handleTimerEnd() {
 
 		switch (this.mode) {
 			case (Mode.Pomo): {
-				new Notice(`Starting ${time} ${unit} pomodoro.`);
+				if (this.isCustom) {
+					new Notice(`Starting ${time} ${unit} custom pomodoro.`);
+				} else {
+					new Notice(`Starting ${time} ${unit} pomodoro.`);
+				}
 				break;
 			}
 			case (Mode.ShortBreak):
 			case (Mode.LongBreak): {
-				new Notice(`Starting ${time} ${unit} break.`);
+				if (this.isCustom) {
+					new Notice(`Starting ${time} ${unit} custom break.`);
+				} else {
+					new Notice(`Starting ${time} ${unit} break.`);
+				}
 				break;
 			}
 			case (Mode.NoTimer): {
@@ -541,11 +594,11 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 
 	async logPomo(): Promise<void> {
 		let durationMs = this.getElapsedActiveMs();
-		let prefix = "[🍅]";
+		let prefix = this.isCustom ? "[🍅 Custom]" : "[🍅]";
 		if (moment().isBefore(this.endTime)) {
-			prefix = "[🍅 Quit Early]";
+			prefix = this.isCustom ? "[🍅 Custom Quit Early]" : "[🍅 Quit Early]";
 		} else if (moment().isAfter(this.endTime)) {
-			prefix = "[🍅 Overtime]";
+			prefix = this.isCustom ? "[🍅 Custom Overtime]" : "[🍅 Overtime]";
 		}
 		const startRef = this.pomoSessionStartTime || this.startTime;
 		const logText = this.buildLogText(prefix, durationMs, startRef);
@@ -573,11 +626,11 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 
 	async logBreak(): Promise<void> {
 		let durationMs = this.getElapsedActiveMs();
-		let prefix = "[🏖]";
+		let prefix = this.isCustom ? "[🏖 Custom]" : "[🏖]";
 		if (moment().isBefore(this.endTime)) {
-			prefix = "[🏖 Quit Early]";
+			prefix = this.isCustom ? "[🏖 Custom Quit Early]" : "[🏖 Quit Early]";
 		} else if (moment().isAfter(this.endTime)) {
-			prefix = "[🏖 Overtime]";
+			prefix = this.isCustom ? "[🏖 Custom Overtime]" : "[🏖 Overtime]";
 		}
 		const startRef = this.breakSessionStartTime || this.startTime;
 		const logText = this.buildLogText(prefix, durationMs, startRef);
@@ -622,6 +675,15 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 	}
 
 	private async getOrCreateLogFilePath(): Promise<string> {
+		if (this.plugin.settings.logToNote) {
+			let file = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.logNote);
+			if (!file || file !instanceof TFolder) { // if no file, create
+				console.log("Creating pomodoro log file");
+				await this.plugin.app.vault.create(this.plugin.settings.logNote, "");
+			}
+			return this.plugin.settings.logNote;
+		}
+
 		if (this.plugin.settings.logToDaily === true) {
 			return (await this.plugin.getDailyNoteFile()).path;
 		}

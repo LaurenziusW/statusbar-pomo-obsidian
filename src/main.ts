@@ -2,6 +2,7 @@ import { Plugin, TFile, moment } from 'obsidian';
 import { PomoSettingTab, PomoSettings, DEFAULT_SETTINGS } from './settings';
 import { Mode, Timer } from './timer';
 import { getDailyNote, createDailyNote, getAllDailyNotes, getDailyNoteSettings } from 'obsidian-daily-notes-interface';
+import { CustomSessionModal } from './custom_session_modal';
 
 
 export default class PomoTimerPlugin extends Plugin {
@@ -126,6 +127,22 @@ export default class PomoTimerPlugin extends Plugin {
 				if (leaf) {
 					if (!checking) {
 						this.timer.finishAndStartNext();
+					}
+					return true;
+				}
+				return false;
+			}
+		});
+
+		this.addCommand({
+			id: 'start-custom-session',
+			name: 'Start custom session',
+			icon: 'play',
+			checkCallback: (checking: boolean) => {
+				let leaf = this.app.workspace.activeLeaf;
+				if (leaf) {
+					if (!checking) {
+						this.timer.startTimer(Mode.Custom);
 					}
 					return true;
 				}

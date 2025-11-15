@@ -26,6 +26,11 @@ export interface PomoSettings {
 	confirmOnSessionStart: boolean;
 	manualAdvance: boolean;
 	confirmOnSessionEnd: boolean;
+	customTimer: boolean;
+	customPomo: number;
+	customBreak: number;
+	logToNote: boolean;
+	logNote: string;
 }
 
 export const DEFAULT_SETTINGS: PomoSettings = {
@@ -50,6 +55,11 @@ export const DEFAULT_SETTINGS: PomoSettings = {
 	confirmOnSessionStart: false,
 	manualAdvance: false,
 	confirmOnSessionEnd: true,
+	customTimer: false,
+	customPomo: 25,
+	customBreak: 5,
+	logToNote: false,
+	logNote: "Pomodoro Custom Log.md",
 }
 
 
@@ -302,6 +312,29 @@ export class PomoSettingTab extends PluginSettingTab {
 						this.plugin.settings.logActiveNote = value;
 						this.plugin.saveSettings();
 					}));
+
+			new Setting(containerEl)
+				.setName("Log to note")
+				.setDesc("Log to a specific note")
+				.addToggle(toggle => toggle
+					.setValue(this.plugin.settings.logToNote)
+					.onChange(value => {
+						this.plugin.settings.logToNote = value;
+						this.plugin.saveSettings();
+						this.display();
+					}));
+
+			if (this.plugin.settings.logToNote) {
+				new Setting(containerEl)
+					.setName("Log note")
+					.setDesc("Note to log to")
+					.addText(text => text
+						.setValue(this.plugin.settings.logNote)
+						.onChange(value => {
+							this.plugin.settings.logNote = value;
+							this.plugin.saveSettings();
+						}));
+			}
 		}
 	}
 }
