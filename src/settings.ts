@@ -23,6 +23,9 @@ export interface PomoSettings {
 	logActiveNote: boolean;
 	fancyStatusBar: boolean;
 	whiteNoise: boolean;
+	confirmOnSessionStart: boolean;
+	manualAdvance: boolean;
+	confirmOnSessionEnd: boolean;
 }
 
 export const DEFAULT_SETTINGS: PomoSettings = {
@@ -44,6 +47,9 @@ export const DEFAULT_SETTINGS: PomoSettings = {
 	logActiveNote: false,
 	fancyStatusBar: false,
 	whiteNoise: false,
+	confirmOnSessionStart: false,
+	manualAdvance: false,
+	confirmOnSessionEnd: true,
 }
 
 
@@ -112,6 +118,36 @@ export class PomoSettingTab extends PluginSettingTab {
 						this.plugin.settings.autostartTimer = value;
 						this.plugin.saveSettings();
 						this.display() //force refresh
+					}));
+
+		new Setting(containerEl)
+			.setName("Confirm on session start")
+			.setDesc("Show a popup to confirm when a pomodoro or break starts")
+			.addToggle(toggle => toggle
+					.setValue(this.plugin.settings.confirmOnSessionStart)
+					.onChange(value => {
+						this.plugin.settings.confirmOnSessionStart = value;
+						this.plugin.saveSettings();
+					}));
+
+		new Setting(containerEl)
+			.setName("Continue until canceled (overtime)")
+			.setDesc("When a session reaches 0, keep counting up with a + until you manually start the next session or quit.")
+			.addToggle(toggle => toggle
+					.setValue(this.plugin.settings.manualAdvance)
+					.onChange(value => {
+						this.plugin.settings.manualAdvance = value;
+						this.plugin.saveSettings();
+					}));
+
+		new Setting(containerEl)
+			.setName("Prompt at session end")
+			.setDesc("When a session ends, ask to continue (overtime) or start the next session.")
+			.addToggle(toggle => toggle
+					.setValue(this.plugin.settings.confirmOnSessionEnd)
+					.onChange(value => {
+						this.plugin.settings.confirmOnSessionEnd = value;
+						this.plugin.saveSettings();
 					}));
 
 		if (this.plugin.settings.autostartTimer === false) {

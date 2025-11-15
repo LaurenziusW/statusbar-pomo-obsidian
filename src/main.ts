@@ -54,6 +54,38 @@ export default class PomoTimerPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: 'start-statusbar-short-break',
+			name: 'Start short break',
+			icon: 'play',
+			checkCallback: (checking: boolean) => {
+				let leaf = this.app.workspace.activeLeaf;
+				if (leaf) {
+					if (!checking) {
+						this.timer.startTimer(Mode.ShortBreak);
+					}
+					return true;
+				}
+				return false;
+			}
+		});
+
+		this.addCommand({
+			id: 'start-statusbar-long-break',
+			name: 'Start long break',
+			icon: 'play',
+			checkCallback: (checking: boolean) => {
+				let leaf = this.app.workspace.activeLeaf;
+				if (leaf) {
+					if (!checking) {
+						this.timer.startTimer(Mode.LongBreak);
+					}
+					return true;
+				}
+				return false;
+			}
+		});
+
+		this.addCommand({
 			id: 'pause-satusbar-pomo',
 			name: 'Toggle timer pause',
 			icon: 'pause',
@@ -78,6 +110,22 @@ export default class PomoTimerPlugin extends Plugin {
 				if (leaf && this.timer.mode !== Mode.NoTimer) {
 					if (!checking) {
 						this.timer.quitTimer();
+					}
+					return true;
+				}
+				return false;
+			}
+		});
+
+		this.addCommand({
+			id: 'finish-and-start-next',
+			name: 'Finish and start next session',
+			icon: 'arrow-right',
+			checkCallback: (checking: boolean) => {
+				let leaf = this.app.workspace.activeLeaf;
+				if (leaf) {
+					if (!checking) {
+						this.timer.finishAndStartNext();
 					}
 					return true;
 				}
