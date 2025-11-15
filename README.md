@@ -25,5 +25,9 @@ If you enable logging, the plugin will write to the file you specify as your log
 
 You can open the current log file by clicking the timer.
 
+### Custom Session
+
+You can start a custom session with the "Start custom session" command. This will open a modal where you can set the pomodoro and break times, and choose to log the session to a specific note. After each session, you will be prompted to start the next session with the same custom times or to change them.
+
 ## Notifications
 You can enable system notifications, which allow you to receive notifications outside of the Obsidian app. Note that if you installed Obsidian through Flatpak on Linux this may not work. As a workaround, you can install Obsidian via [one of the other supported methods](https://obsidian.md/download).
