@@ -1,4 +1,3 @@
-
 import { App, Modal, Setting, ButtonComponent } from 'obsidian';
 
 export class UnsuccessfulPomoModal extends Modal {

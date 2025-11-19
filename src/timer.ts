@@ -41,6 +41,10 @@ export class Timer {
 	customPomo: number;
 	customBreak: number;
 	isCustom: boolean;
+	
+	// New properties to isolate custom logging
+	customLogToNote: boolean;
+	customLogNote: string;
 
 	constructor(plugin: PomoTimerPlugin) {
 		this.plugin = plugin;
@@ -49,18 +53,22 @@ export class Timer {
 		this.pomosSinceStart = 0;
 		this.cyclesSinceLastAutoStop = 0;
 
-			if (this.plugin.settings.whiteNoise === true) {
-				this.whiteNoisePlayer = new WhiteNoise(plugin, whiteNoiseUrl);
-			}
-
-			this.pomoSessionStartTime = null;
-			this.breakSessionStartTime = null;
-			this.inOvertime = false;
-			this.awaitingEndDecision = false;
-			this.customPomo = this.plugin.settings.customPomo;
-			this.customBreak = this.plugin.settings.customBreak;
-			this.isCustom = false;
+		if (this.plugin.settings.whiteNoise === true) {
+			this.whiteNoisePlayer = new WhiteNoise(plugin, whiteNoiseUrl);
 		}
+
+		this.pomoSessionStartTime = null;
+		this.breakSessionStartTime = null;
+		this.inOvertime = false;
+		this.awaitingEndDecision = false;
+		this.customPomo = this.plugin.settings.customPomo;
+		this.customBreak = this.plugin.settings.customBreak;
+		this.isCustom = false;
+		
+		// Initialize custom log properties
+		this.customLogToNote = false;
+		this.customLogNote = "";
+	}
 
 	onRibbonIconClick() {
 		if (this.mode === Mode.NoTimer) {  //if starting from not having a timer running/paused
@@ -100,87 +108,92 @@ export class Timer {
 			}
 
 			return timer_type_symbol + millisecsToString(this.getCountdown()); //return display value
-		               } else {
-		                       return `🍅`;
-		               }	}
+		} else {
+			return `🍅`;
+		}	
+	}
 
-async handleTimerEnd() {
-        // Play end notifications once
-        if (this.plugin.settings.notificationSound === true) {
-            playNotification();
-        }
-        if (this.plugin.settings.useSystemNotification === true) {
-            showSystemNotification(this.mode, this.plugin.settings.emoji);
-        }
+	async handleTimerEnd() {
+		// Play end notifications once
+		if (this.plugin.settings.notificationSound === true) {
+			playNotification();
+		}
+		if (this.plugin.settings.useSystemNotification === true) {
+			showSystemNotification(this.mode, this.plugin.settings.emoji);
+		}
 
-        // If end-of-session prompt is enabled, ask user to continue or start next
-        if (this.plugin.settings.confirmOnSessionEnd) {
-            if (this.awaitingEndDecision) return; // guard re-entry
-            this.awaitingEndDecision = true;
+		// If end-of-session prompt is enabled, ask user to continue or start next
+		if (this.plugin.settings.confirmOnSessionEnd) {
+			if (this.awaitingEndDecision) return; // guard re-entry
+			this.awaitingEndDecision = true;
 
-            const choice = await this.promptEndOfSession();
-            this.awaitingEndDecision = false;
+			const choice = await this.promptEndOfSession();
+			this.awaitingEndDecision = false;
 
-            if (choice === 'continue') {
-                this.inOvertime = true;
-                return; // keep running current session
-            }
+			if (choice === 'continue') {
+				this.inOvertime = true;
+				return; // keep running current session
+			}
 
-            if (choice === 'quit') {
-                // Log finished session then cleanly stop timer
-                if (this.plugin.settings.logging === true) {
-                    if (this.mode === Mode.Pomo) {
-                        await this.logPomo();
-                    } else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
-                        await this.logBreak();
-                    }
-                }
-                // Stop any white noise
-                if (this.plugin.settings.whiteNoise === true && this.whiteNoisePlayer) {
-                    this.whiteNoisePlayer.stopWhiteNoise();
-                }
-                // Reset state similar to quitTimer but without double logging
-                this.mode = Mode.NoTimer;
-                this.startTime = moment(0);
-                this.endTime = moment(0);
-                this.paused = false;
-                this.inOvertime = false;
-                this.autoPaused = false;
-                this.pausedTime = 0;
-                this.pomosSinceStart = 0;
-                return;
-            }
+			if (choice === 'quit') {
+				// Log finished session then cleanly stop timer
+				if (this.plugin.settings.logging === true) {
+					if (this.mode === Mode.Pomo) {
+						await this.logPomo();
+					} else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
+						await this.logBreak();
+					}
+				}
+				// Stop any white noise
+				if (this.plugin.settings.whiteNoise === true && this.whiteNoisePlayer) {
+					this.whiteNoisePlayer.stopWhiteNoise();
+				}
+				// Reset state similar to quitTimer but without double logging
+				this.mode = Mode.NoTimer;
+				this.startTime = moment(0);
+				this.endTime = moment(0);
+				this.paused = false;
+				this.inOvertime = false;
+				this.autoPaused = false;
+				this.pausedTime = 0;
+				this.pomosSinceStart = 0;
+				// Reset custom flags
+				this.isCustom = false;
+				this.customLogToNote = false;
+				this.customLogNote = "";
+				return;
+			}
 
-            if (choice === 'unsuccessful') {
-                new UnsuccessfulPomoModal(this.plugin.app, async (reason: string) => {
-                    await this.logUnsuccessfulPomo(reason);
-                    const nextMode = (this.pomosSinceStart % this.plugin.settings.longBreakInterval === 0) ? Mode.LongBreak : Mode.ShortBreak;
-                    this.inOvertime = false;
-                    this.startTimerNoConfirm(nextMode);
-                }).open();
-                return;
-            }
+			if (choice === 'unsuccessful') {
+				new UnsuccessfulPomoModal(this.plugin.app, async (reason: string) => {
+					await this.logUnsuccessfulPomo(reason);
+					const nextMode = (this.pomosSinceStart % this.plugin.settings.longBreakInterval === 0) ? Mode.LongBreak : Mode.ShortBreak;
+					this.inOvertime = false;
+					this.startTimerNoConfirm(nextMode);
+				}).open();
+				return;
+			}
 
-            // choice === 'next' → log and advance
-            if (this.mode === Mode.Pomo) {
-                this.pomosSinceStart += 1;
-                if (this.plugin.settings.logging === true) {
-                    await this.logPomo(this.getElapsedActiveMs());
-                }
-                const nextMode = (this.pomosSinceStart % this.plugin.settings.longBreakInterval === 0) ? Mode.LongBreak : Mode.ShortBreak;
-                this.inOvertime = false;
-                this.startTimerNoConfirm(nextMode);
-                return;
-            } else {
-                this.cyclesSinceLastAutoStop += 1;
-                if (this.plugin.settings.logging === true) {
-                    await this.logBreak(this.getElapsedActiveMs());
-                }
-                this.inOvertime = false;
-                this.startTimerNoConfirm(Mode.Pomo);
-                return;
-            }
-        }
+			// choice === 'next' → log and advance
+			if (this.mode === Mode.Pomo) {
+				this.pomosSinceStart += 1;
+				if (this.plugin.settings.logging === true) {
+					await this.logPomo(this.getElapsedActiveMs());
+				}
+				const nextMode = (this.pomosSinceStart % this.plugin.settings.longBreakInterval === 0) ? Mode.LongBreak : Mode.ShortBreak;
+				this.inOvertime = false;
+				this.startTimerNoConfirm(nextMode);
+				return;
+			} else {
+				this.cyclesSinceLastAutoStop += 1;
+				if (this.plugin.settings.logging === true) {
+					await this.logBreak(this.getElapsedActiveMs());
+				}
+				this.inOvertime = false;
+				this.startTimerNoConfirm(Mode.Pomo);
+				return;
+			}
+		}
 
 		if (this.mode === Mode.Custom) {
 			this.plugin.settings.customTimer = true;
@@ -191,63 +204,98 @@ async handleTimerEnd() {
 			return;
 		}
 
-        // Fallback to prior behavior when prompt is disabled
-        if (this.plugin.settings.manualAdvance) {
-            this.inOvertime = true;
-            return;
-        }
+		// Fallback to prior behavior when prompt is disabled
+		if (this.plugin.settings.manualAdvance) {
+			this.inOvertime = true;
+			return;
+		}
 
-        if (this.mode === Mode.Pomo) { //completed another pomo
-            this.pomosSinceStart += 1;
-            if (this.plugin.settings.logging === true) {
-                await this.logPomo();
-            }
-        } else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
-            this.cyclesSinceLastAutoStop += 1;
-            if (this.plugin.settings.logging === true) {
-                await this.logBreak();
-            }
-        }
+		if (this.mode === Mode.Pomo) { //completed another pomo
+			this.pomosSinceStart += 1;
+			if (this.plugin.settings.logging === true) {
+				await this.logPomo();
+			}
+		} else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
+			this.cyclesSinceLastAutoStop += 1;
+			if (this.plugin.settings.logging === true) {
+				await this.logBreak();
+			}
+		}
 
-        if (this.plugin.settings.autostartTimer === false && this.plugin.settings.numAutoCycles <= this.cyclesSinceLastAutoStop) {
-            this.setupTimer();
-            this.autoPaused = true;
-            this.paused = true;
-            this.pausedTime = this.getTotalModeMillisecs();
-            this.cyclesSinceLastAutoStop = 0;
-        } else {
-            this.startTimerNoConfirm();
-        }
-    }
+		if (this.plugin.settings.autostartTimer === false && this.plugin.settings.numAutoCycles <= this.cyclesSinceLastAutoStop) {
+			this.setupTimer();
+			this.autoPaused = true;
+			this.paused = true;
+			this.pausedTime = this.getTotalModeMillisecs();
+			this.cyclesSinceLastAutoStop = 0;
+		} else {
+			this.startTimerNoConfirm();
+		}
+	}
 
-    async quitTimer(): Promise<void> {
-        // Log the running session on quit with actual duration
-        if (this.plugin.settings.logging === true) {
-            try {
+	async quitTimer(): Promise<void> {
+		// Log the running session on quit with actual duration
+		if (this.plugin.settings.logging === true) {
+			try {
 				const elapsedMs = this.getElapsedActiveMs();
-                if (this.mode === Mode.Pomo) {
-                    await this.logPomo(elapsedMs);
-                } else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
-                    await this.logBreak(elapsedMs);
-                }
-            } catch (e) {
-                console.log(e);
-            }
-        }
+				if (this.mode === Mode.Pomo) {
+					await this.logPomo(elapsedMs);
+				} else if (this.mode === Mode.ShortBreak || this.mode === Mode.LongBreak) {
+					await this.logBreak(elapsedMs);
+				}
+			} catch (e) {
+				console.log(e);
+			}
+		}
 
 		this.mode = Mode.NoTimer;
 		this.startTime = moment(0);
 		this.endTime = moment(0);
 		this.paused = false;
-        this.pomosSinceStart = 0;
-        this.inOvertime = false;
+		this.pomosSinceStart = 0;
+		this.inOvertime = false;
+		
 		this.isCustom = false;
+		this.customLogToNote = false;
+		this.customLogNote = "";
 
 		if (this.plugin.settings.whiteNoise === true) {
 			this.whiteNoisePlayer.stopWhiteNoise();
 		}
 
 		await this.plugin.loadSettings(); //why am I loading settings on quit? to ensure that when I restart everything is correct? seems weird
+	}
+	
+	// NEW METHOD to handle early failure
+	async failSessionEarly(): Promise<void> {
+		if (this.mode === Mode.NoTimer) {
+			new Notice("No active session to fail.");
+			return;
+		}
+		
+		// Pause immediately
+		this.paused = true;
+		if (this.plugin.settings.whiteNoise === true) {
+			this.whiteNoisePlayer.stopWhiteNoise();
+		}
+
+		new UnsuccessfulPomoModal(this.plugin.app, async (reason: string) => {
+			await this.logUnsuccessfulPomo(reason);
+			
+			// Reset timer
+			this.mode = Mode.NoTimer;
+			this.startTime = moment(0);
+			this.endTime = moment(0);
+			this.paused = false;
+			this.pomosSinceStart = 0;
+			this.inOvertime = false;
+			this.isCustom = false;
+			this.customLogToNote = false;
+			this.customLogNote = "";
+
+			this.setStatusBarText();
+			new Notice("Session marked as unsuccessful.");
+		}).open();
 	}
 
 	pauseTimer(): void {
@@ -296,11 +344,19 @@ async handleTimerEnd() {
 	startTimer(mode: Mode = null): void {
 		if (mode === Mode.Custom) {
 			new CustomSessionModal(this.plugin.app, this.plugin, (pomo: number, shortBreak: number, logToNote: boolean, logNote: string) => {
+				// Set properties for the CURRENT session (stored on the timer instance)
 				this.customPomo = pomo;
 				this.customBreak = shortBreak;
+				this.customLogToNote = logToNote;
+				this.customLogNote = logNote;
+
+				// Update GLOBAL settings so they are remembered as defaults for the NEXT session
+				this.plugin.settings.customPomo = pomo;
+				this.plugin.settings.customBreak = shortBreak;
 				this.plugin.settings.logToNote = logToNote;
 				this.plugin.settings.logNote = logNote;
 				this.plugin.saveSettings();
+
 				this.isCustom = true;
 				this.startTimerWithConfirm(Mode.Pomo);
 			}).open();
@@ -489,7 +545,7 @@ async handleTimerEnd() {
 
 
 
-	/**************  Notifications  **************/
+	/************** Notifications  **************/
 	/*Sends notification corresponding to whatever the mode is at the moment it's called*/
 	modeStartingNotification(): void {
 		let time = this.getTotalModeMillisecs();
@@ -544,16 +600,16 @@ async handleTimerEnd() {
 
 
 
-	/**************  Logging  **************/
-private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Moment): string {
-    // Log time of day with seconds for clearer differences within a minute
-    const endTs = moment().format('HH:mm:ss');
-    let timePart = endTs;
-    if (start) {
-        const startTs = start.format('HH:mm:ss');
-        timePart = `${startTs}–${endTs}`;
-    }
-    let logText = prefix ? `${prefix} ${timePart}` : timePart;
+	/************** Logging  **************/
+	private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Moment): string {
+		// Log time of day with seconds for clearer differences within a minute
+		const endTs = moment().format('HH:mm:ss');
+		let timePart = endTs;
+		if (start) {
+			const startTs = start.format('HH:mm:ss');
+			timePart = `${startTs}–${endTs}`;
+		}
+		let logText = prefix ? `${prefix} ${timePart}` : timePart;
 
 		// Append duration before the note link when provided
 		if (typeof durationMs === 'number' && !isNaN(durationMs) && durationMs >= 0) {
@@ -597,16 +653,17 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 			breakTime += duration;
 		}
 
-		               const totalTime = sessionTime + breakTime;
-		
-		               const summary = `---
-		**Total Session Time:** ${moment.utc(sessionTime).format('HH:mm:ss')}
-		**Total Break Time:** ${moment.utc(breakTime).format('HH:mm:ss')}
-		**Total Time:** ${moment.utc(totalTime).format('HH:mm:ss')}
-		---
-		`;
-		
-		               return summary + content;	}
+		const totalTime = sessionTime + breakTime;
+
+		const summary = `---
+**Total Session Time:** ${moment.utc(sessionTime).format('HH:mm:ss')}
+**Total Break Time:** ${moment.utc(breakTime).format('HH:mm:ss')}
+**Total Time:** ${moment.utc(totalTime).format('HH:mm:ss')}
+---
+`;
+
+		return summary + content;	
+	}
 
 	async logPomo(durationMs?: number): Promise<void> {
 		const duration = durationMs ?? this.getTotalModeMillisecs();
@@ -618,7 +675,14 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 
 	async logUnsuccessfulPomo(reason: string): Promise<void> {
 		const now = moment();
-		const logText = `[🍅] ${now.format('YYYY-MM-DD HH:mm')} - Unsuccessful. Reason: ${reason}`;
+		let logText = `[🍅] ${now.format('YYYY-MM-DD HH:mm')} - Unsuccessful. Reason: ${reason}`;
+
+		// Append active note if enabled
+		if (this.plugin.settings.logActiveNote === true && this.activeNote) {
+			const linkText = this.plugin.app.fileManager.generateMarkdownLink(this.activeNote, '');
+			logText = `${logText} ${linkText}`;
+		}
+
 		const filePath = await this.getOrCreateLogFilePath(true);
 		let content = await this.plugin.app.vault.adapter.read(filePath);
 		content = logText + '\n' + content;
@@ -672,24 +736,28 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 		if (unsuccessful) {
 			const filePath = this.plugin.settings.failedPomoLogFile;
 			let file = this.plugin.app.vault.getAbstractFileByPath(filePath);
-			if (!file || file !instanceof TFolder) { // if no file, create
+			if (!file) { // if no file, create
 				console.log("Creating pomodoro log file");
 				await this.plugin.app.vault.create(filePath, "");
 			}
 			return filePath;
 		}
 		
-		if (this.plugin.settings.logToNote) {
-			let file = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.logNote);
-			if (!file || file !instanceof TFolder) { // if no file, create
-				console.log("Creating pomodoro log file");
-				await this.plugin.app.vault.create(this.plugin.settings.logNote, "");
+		// CHANGED: Check for custom session specific log note first
+		if (this.isCustom && this.customLogToNote) {
+			let file = this.plugin.app.vault.getAbstractFileByPath(this.customLogNote);
+			if (!file) { // if no file, create
+				console.log("Creating custom pomodoro log file");
+				await this.plugin.app.vault.create(this.customLogNote, "");
 			}
-			return this.plugin.settings.logNote;
+			return this.customLogNote;
 		}
+		
+		// CHANGED: standard sessions now ALWAYS fall through to the default logFile.
+		// We have removed the check for plugin.settings.logToNote here so it doesn't affect global logging.
 
 		let file = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.logFile);
-		if (!file || file !instanceof TFolder) { // if no file, create
+		if (!file) { // if no file, create
 			console.log("Creating pomodoro log file");
 			await this.plugin.app.vault.create(this.plugin.settings.logFile, "");
 		}
