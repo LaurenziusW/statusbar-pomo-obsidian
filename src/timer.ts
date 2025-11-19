@@ -1,4 +1,5 @@
-import { Notice, moment, TFolder, TFile, Modal, ButtonComponent } from 'obsidian';
+import { App, Notice, Modal, ButtonComponent, TFile, moment, TFolder } from 'obsidian';
+import { UnsuccessfulPomoModal } from './unsuccessful-pomo-modal';
 import { notificationUrl, whiteNoiseUrl } from './audio_urls';
 import { WhiteNoise } from './white_noise';
 import PomoTimerPlugin from './main';
@@ -99,14 +100,9 @@ export class Timer {
 			}
 
 			return timer_type_symbol + millisecsToString(this.getCountdown()); //return display value
-		} else {
-			const today = moment().startOf('day');
-			const filePath = await this.getOrCreateLogFilePath();
-			const content = await this.plugin.app.vault.adapter.read(filePath);
-			const dailyPomos = content.split('\n').filter(line => line.startsWith('[🍅]') && moment(line.split(' ')[1], 'YYYY-MM-DD').isSame(today, 'd')).length;
-			return `🍅 ${dailyPomos}/${this.plugin.settings.dailyGoal}`;
-		}
-	}
+		               } else {
+		                       return `🍅`;
+		               }	}
 
 async handleTimerEnd() {
         // Play end notifications once
@@ -152,6 +148,16 @@ async handleTimerEnd() {
                 this.autoPaused = false;
                 this.pausedTime = 0;
                 this.pomosSinceStart = 0;
+                return;
+            }
+
+            if (choice === 'unsuccessful') {
+                new UnsuccessfulPomoModal(this.plugin.app, async (reason: string) => {
+                    await this.logUnsuccessfulPomo(reason);
+                    const nextMode = (this.pomosSinceStart % this.plugin.settings.longBreakInterval === 0) ? Mode.LongBreak : Mode.ShortBreak;
+                    this.inOvertime = false;
+                    this.startTimerNoConfirm(nextMode);
+                }).open();
                 return;
             }
 
@@ -591,27 +597,16 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 			breakTime += duration;
 		}
 
-		const totalTime = sessionTime + breakTime;
-
-		const today = moment().startOf('day');
-		const week = moment().startOf('week');
-
-		const dailyPomos = content.split('\n').filter(line => line.startsWith('[🍅]') && moment(line.split(' ')[1], 'YYYY-MM-DD').isSame(today, 'd')).length;
-		const weeklyPomos = content.split('\n').filter(line => line.startsWith('[🍅]') && moment(line.split(' ')[1], 'YYYY-MM-DD').isSame(week, 'w')).length;
-
-		const summary = `---
-**Total Session Time:** ${moment.utc(sessionTime).format('HH:mm:ss')}
-**Total Break Time:** ${moment.utc(breakTime).format('HH:mm:ss')}
-**Total Time:** ${moment.utc(totalTime).format('HH:mm:ss')}
----
-**Goals**
-**Daily:** ${dailyPomos}/${this.plugin.settings.dailyGoal}
-**Weekly:** ${weeklyPomos}/${this.plugin.settings.weeklyGoal}
----
-`;
-
-		return summary + content;
-	}
+		               const totalTime = sessionTime + breakTime;
+		
+		               const summary = `---
+		**Total Session Time:** ${moment.utc(sessionTime).format('HH:mm:ss')}
+		**Total Break Time:** ${moment.utc(breakTime).format('HH:mm:ss')}
+		**Total Time:** ${moment.utc(totalTime).format('HH:mm:ss')}
+		---
+		`;
+		
+		               return summary + content;	}
 
 	async logPomo(durationMs?: number): Promise<void> {
 		const duration = durationMs ?? this.getTotalModeMillisecs();
@@ -619,6 +614,15 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 		const logText = `[🍅] ${startTime.format('YYYY-MM-DD HH:mm')} - ${moment().format('HH:mm')} (${millisecsToString(duration)} minutes)`;
 		await this.writeLogEntry(logText, duration, Mode.Pomo);
 		this.pomoSessionStartTime = null;
+	}
+
+	async logUnsuccessfulPomo(reason: string): Promise<void> {
+		const now = moment();
+		const logText = `[🍅] ${now.format('YYYY-MM-DD HH:mm')} - Unsuccessful. Reason: ${reason}`;
+		const filePath = await this.getOrCreateLogFilePath(true);
+		let content = await this.plugin.app.vault.adapter.read(filePath);
+		content = logText + '\n' + content;
+		await this.plugin.app.vault.adapter.write(filePath, content);
 	}
 
 	async logBreak(durationMs?: number): Promise<void> {
@@ -664,7 +668,17 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 		await this.plugin.app.vault.adapter.write(filePath, existingContent + logText);
 	}
 
-	private async getOrCreateLogFilePath(): Promise<string> {
+	private async getOrCreateLogFilePath(unsuccessful: boolean = false): Promise<string> {
+		if (unsuccessful) {
+			const filePath = this.plugin.settings.failedPomoLogFile;
+			let file = this.plugin.app.vault.getAbstractFileByPath(filePath);
+			if (!file || file !instanceof TFolder) { // if no file, create
+				console.log("Creating pomodoro log file");
+				await this.plugin.app.vault.create(filePath, "");
+			}
+			return filePath;
+		}
+		
 		if (this.plugin.settings.logToNote) {
 			let file = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.logNote);
 			if (!file || file !instanceof TFolder) { // if no file, create
@@ -672,10 +686,6 @@ private buildLogText(prefix: string = "", durationMs?: number, start?: moment.Mo
 				await this.plugin.app.vault.create(this.plugin.settings.logNote, "");
 			}
 			return this.plugin.settings.logNote;
-		}
-
-		if (this.plugin.settings.logToDaily === true) {
-			return (await this.plugin.getDailyNoteFile()).path;
 		}
 
 		let file = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.logFile);
@@ -736,7 +746,7 @@ class ConfirmStartModal extends Modal {
 	}
 }
 
-type EndChoice = 'continue' | 'next' | 'quit';
+type EndChoice = 'continue' | 'next' | 'quit' | 'unsuccessful';
 
 class EndOfSessionModal extends Modal {
 	private onCloseCb: (choice: EndChoice) => void;
@@ -758,6 +768,11 @@ class EndOfSessionModal extends Modal {
         contentEl.createEl('p', { text: 'Continue current session (overtime) or start the next?' });
 
         const buttons = contentEl.createDiv({ cls: 'mod-footer' });
+        if (this.plugin.timer.mode === Mode.Pomo) {
+            new ButtonComponent(buttons)
+                .setButtonText('Unsuccessful')
+                .onClick(() => { this.close(); this.onCloseCb('unsuccessful'); });
+        }
         new ButtonComponent(buttons)
             .setButtonText('Quit')
             .onClick(() => { this.close(); this.onCloseCb('quit'); });

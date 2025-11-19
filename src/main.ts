@@ -1,7 +1,7 @@
 import { Plugin, TFile, moment } from 'obsidian';
 import { PomoSettingTab, PomoSettings, DEFAULT_SETTINGS } from './settings';
 import { Mode, Timer } from './timer';
-import { getDailyNote, createDailyNote, getAllDailyNotes, getDailyNoteSettings } from 'obsidian-daily-notes-interface';
+
 import { CustomSessionModal } from './custom_session_modal';
 
 
@@ -160,12 +160,7 @@ export default class PomoTimerPlugin extends Plugin {
 			if (this.settings.logging === true) { //this is hacky, ideally I'd just unwatch the onClickEvent as soon as I turned logging off
 				try {
 					var file: string;
-					if (this.settings.logToDaily === true) {
-						file = (await this.getDailyNoteFile()).path;
-					} else {
-						file = this.settings.logFile;
-					}
-
+					                                               file = this.settings.logFile;
 					this.app.workspace.openLinkText(file, '', false);
 				} catch (error) {
 					console.log(error);
@@ -187,22 +182,4 @@ export default class PomoTimerPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	async getDailyNoteFile(): Promise<TFile> {
-	try {
-		let file = getDailyNote(moment() as any, getAllDailyNotes()); // as any, because getDailyNote is importing its own Moment and I'm using Obsidian's
-
-		if (!file) {
-			file = await createDailyNote(moment() as any);
-			console.log("Created daily note: " + file.path);
-		}
-		return file as any;
 	}
-	catch (error) { // If entire folder does not exist
-		let dailyNoteFolder = getDailyNoteSettings().folder;
-		console.log("Creating daily note folder: " + dailyNoteFolder);
-		this.app.vault.createFolder(dailyNoteFolder);
-		let file = await createDailyNote(moment() as any);
-		return file as any;
-	}
-}
-}

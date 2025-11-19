@@ -1,5 +1,4 @@
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
-import { appHasDailyNotesPluginLoaded } from 'obsidian-daily-notes-interface';
 import { whiteNoiseUrl } from './audio_urls';
 import PomoTimerPlugin from './main';
 import { WhiteNoise } from './white_noise';
@@ -18,10 +17,8 @@ export interface PomoSettings {
 	backgroundNoiseFile: string;
 	logging: boolean;
 	logFile: string;
-	logText: string;
-	logToDaily: boolean;
-	logActiveNote: boolean;
-	fancyStatusBar: boolean;
+	       logText: string;
+	       logActiveNote: boolean;	fancyStatusBar: boolean;
 	whiteNoise: boolean;
 	confirmOnSessionStart: boolean;
 	manualAdvance: boolean;
@@ -31,9 +28,7 @@ export interface PomoSettings {
 	customBreak: number;
 	logToNote: boolean;
 	logNote: string;
-	dailyGoal: number;
-	weeklyGoal: number;
-}
+	failedPomoLogFile: string;}
 
 export const DEFAULT_SETTINGS: PomoSettings = {
 	pomo: 25,
@@ -48,10 +43,8 @@ export const DEFAULT_SETTINGS: PomoSettings = {
 	useSystemNotification: false,
 	backgroundNoiseFile: "",
 	logging: false,
-	logFile: "Pomodoro Log.md",
-	logToDaily: false,
-	logText: "[🍅] dddd, MMMM DD YYYY, h:mm A",
-	logActiveNote: false,
+	       logFile: "Pomodoro Log.md",
+	       logText: "[🍅] dddd, MMMM DD YYYY, h:mm A",	logActiveNote: false,
 	fancyStatusBar: false,
 	whiteNoise: false,
 	confirmOnSessionStart: false,
@@ -62,9 +55,7 @@ export const DEFAULT_SETTINGS: PomoSettings = {
 	customBreak: 5,
 	logToNote: false,
 	logNote: "Pomodoro Custom Log.md",
-	dailyGoal: 10,
-	weeklyGoal: 40,
-}
+	failedPomoLogFile: "Pomodoro Failures.md",}
 
 
 export class PomoSettingTab extends PluginSettingTab {
@@ -280,21 +271,16 @@ export class PomoSettingTab extends PluginSettingTab {
 					}));
 
 			new Setting(containerEl)
-				.setName("Log to daily note")
-				.setDesc("Logs to the end of today's daily note")
-				.addToggle(toggle => toggle
-					.setValue(this.plugin.settings.logToDaily)
+				.setName("Failed pomodoro log file")
+				.setDesc("If file doesn't already exist, it will be created")
+				.addText(text => text
+					.setValue(this.plugin.settings.failedPomoLogFile.toString())
 					.onChange(value => {
-						if (appHasDailyNotesPluginLoaded() === true) {
-							this.plugin.settings.logToDaily = value;
-						} else if (value === true) {
-							this.plugin.settings.logToDaily = false;
-							new Notice("Please enable daily notes plugin");
-						}
+						this.plugin.settings.failedPomoLogFile = value;
 						this.plugin.saveSettings();
-
 					}));
-	
+
+				
 
 			new Setting(containerEl)
 				.setName("Timestamp Format")
@@ -340,28 +326,6 @@ export class PomoSettingTab extends PluginSettingTab {
 						}));
 			}
 		}
-
-		containerEl.createEl('h2', { text: 'Goals' });
-
-		new Setting(containerEl)
-			.setName("Daily Goal")
-			.setDesc("Number of pomodoros to complete each day")
-			.addText(text => text
-				.setValue(this.plugin.settings.dailyGoal.toString())
-				.onChange(value => {
-					this.plugin.settings.dailyGoal = setNumericValue(value, DEFAULT_SETTINGS.dailyGoal, this.plugin.settings.dailyGoal);
-					this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName("Weekly Goal")
-			.setDesc("Number of pomodoros to complete each week")
-			.addText(text => text
-				.setValue(this.plugin.settings.weeklyGoal.toString())
-				.onChange(value => {
-					this.plugin.settings.weeklyGoal = setNumericValue(value, DEFAULT_SETTINGS.weeklyGoal, this.plugin.settings.weeklyGoal);
-					this.plugin.saveSettings();
-				}));
 	}
 }
 
