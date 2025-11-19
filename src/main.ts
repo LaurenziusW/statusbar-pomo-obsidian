@@ -54,6 +54,24 @@ export default class PomoTimerPlugin extends Plugin {
 			}
 		});
 
+
+        this.addCommand({
+            id: 'fail-session-early',
+            name: 'Fail current session',
+            icon: 'cross',
+            checkCallback: (checking: boolean) => {
+                let leaf = this.app.workspace.activeLeaf;
+                // Only allow this command if a timer is actually running
+                if (leaf && this.timer.mode !== Mode.NoTimer) {
+                    if (!checking) {
+                        this.timer.failSessionEarly();
+                    }
+                    return true;
+                }
+                return false;
+            }
+        });
+
 		this.addCommand({
 			id: 'start-statusbar-short-break',
 			name: 'Start short break',
